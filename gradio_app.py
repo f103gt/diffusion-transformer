@@ -18,7 +18,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import model components
-from model.vae import VAE
+from model.vae.vae import VAE
 from model.transformer import DIT
 from scheduler.linear_scheduler import LinearNoiseScheduler
 
@@ -85,7 +85,7 @@ def load_models(config_path="config/landscapeshq.yaml"):
     
     model.eval()
     model.load_state_dict(torch.load(dit_checkpoint_path, map_location=device))
-    print(f"✅ DiT model loaded from {dit_checkpoint_path}")
+    print(f"DiT model loaded from {dit_checkpoint_path}")
     
     # Create and load VAE
     vae = VAE(
@@ -99,7 +99,7 @@ def load_models(config_path="config/landscapeshq.yaml"):
         raise FileNotFoundError(f"VAE checkpoint not found at {vae_checkpoint_path}")
     
     vae.load_state_dict(torch.load(vae_checkpoint_path, map_location=device), strict=True)
-    print(f"✅ VAE loaded from {vae_checkpoint_path}")
+    print(f"VAE loaded from {vae_checkpoint_path}")
     
     # Load class mapping
     if 'label_json_path' in dataset_config and dataset_config['label_json_path']:
@@ -109,10 +109,10 @@ def load_models(config_path="config/landscapeshq.yaml"):
                 label_data = json.load(f)
             unique_classes = sorted(set(label_data.values()))
             class_to_id = {class_name: idx for idx, class_name in enumerate(unique_classes)}
-            print(f"✅ Class mapping loaded: {class_to_id}")
+            print(f"Class mapping loaded: {class_to_id}")
     
     print("=" * 60)
-    print("🚀 All models loaded successfully!")
+    print("All models loaded successfully!")
     print("=" * 60)
 
 
@@ -135,7 +135,7 @@ def generate_image(class_name, upscale_factor, progress=gr.Progress()):
         np.random.seed(seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
-        
+        s
         progress(0.1, desc="Initializing generation...")
         
         # Get dimensions from config
@@ -205,7 +205,7 @@ def generate_image(class_name, upscale_factor, progress=gr.Progress()):
         
     except Exception as e:
         import traceback
-        error_msg = f"❌ Error: {str(e)}\n{traceback.format_exc()}"
+        error_msg = f"Error: {str(e)}\n{traceback.format_exc()}"
         print(error_msg)
         return None, error_msg
 
@@ -310,14 +310,14 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     print("=" * 60)
-    print("🚀 Starting DiT-PyTorch Gradio Interface")
+    print("Starting DiT-PyTorch Gradio Interface")
     print("=" * 60)
     
     # Load models
     try:
         load_models(config_path=args.config)
     except Exception as e:
-        print(f"❌ Failed to load models: {e}")
+        print(f"Failed to load models: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)

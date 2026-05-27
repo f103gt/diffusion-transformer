@@ -15,7 +15,7 @@ def validate_json(json_path, image_dir=None):
     with open(json_path, 'r') as f:
         labels = json.load(f)
     
-    print(f'📊 Validation Report for {json_path}')
+    print(f'    Validation Report for {json_path}')
     print(f'   Total labels: {len(labels)}')
     
     unique_classes = sorted(set(labels.values()))
@@ -42,10 +42,10 @@ def validate_json(json_path, image_dir=None):
                 missing.append(filename)
         
         if missing:
-            print(f'\n   ⚠️  Warning: {len(missing)} files not found in {image_dir}')
+            print(f'\n    Warning: {len(missing)} files not found in {image_dir}')
             print(f'      First 5 missing: {missing[:5]}')
         else:
-            print(f'\n   ✅ All {len(labels)} image files found in {image_dir}')
+            print(f'\n    All {len(labels)} image files found in {image_dir}')
 
 
 def merge_jsons(json_files, output_json):
@@ -63,9 +63,9 @@ def merge_jsons(json_files, output_json):
     with open(output_json, 'w') as f:
         json.dump(merged, f, indent=2)
     
-    print(f'✅ Merged {len(json_files)} JSON files')
-    print(f'✅ Total labels: {len(merged)}')
-    print(f'✅ Saved to: {output_json}')
+    print(f'Merged {len(json_files)} JSON files')
+    print(f'Total labels: {len(merged)}')
+    print(f'Saved to: {output_json}')
 
 
 if __name__ == '__main__':
@@ -82,21 +82,21 @@ if __name__ == '__main__':
     
     if args.mode == 'validate':
         if not args.input:
-            print('❌ Error: --input required for validate mode')
+            print('Error: --input required for validate mode')
             exit(1)
         validate_json(args.input, args.image_dir)
         
-        print('\n📝 Next steps:')
+        print('\nNext steps:')
         print(f'   1. Update config/landscapeshq.yaml with: label_json_path: \'{args.input}\'')
         print(f'   2. Run training: python tools/train_vae_dit.py --config config/landscapeshq.yaml')
         
     elif args.mode == 'merge':
         if not args.merge_files:
-            print('❌ Error: --merge-files required for merge mode')
+            print('Error: --merge-files required for merge mode')
             exit(1)
         merge_jsons(args.merge_files, args.output)
         
-        print('\n📝 Next steps:')
+        print('\nNext steps:')
         print(f'   1. Review the merged labels in: {args.output}')
         print(f'   2. Update config/landscapeshq.yaml with: label_json_path: \'{args.output}\'')
         print(f'   3. Run training: python tools/train_vae_dit.py --config config/landscapeshq.yaml')

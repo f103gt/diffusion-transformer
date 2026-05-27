@@ -11,7 +11,7 @@ from torchvision.utils import make_grid
 from tqdm import tqdm
 
 from dataset.landscapes_dataset import LandscapesDataset
-from model.vae import VAE
+from model.vae.vae import VAE
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 if torch.backends.mps.is_available():
@@ -20,7 +20,22 @@ if torch.backends.mps.is_available():
 
 
 def infer(args):
-    ######## Read the config file #######
+    """
+    Runs inference on a trained Variational Autoencoder (VAE).
+
+    This function serves two distinct purposes based on the configuration:
+    1. Visual Evaluation: It randomly samples a batch of images from the dataset, 
+       passes them through the VAE encoder and decoder, and saves image grids 
+       comparing the original inputs, the spatial representation of the latents, 
+       and the final reconstructions. This helps visually verify model convergence.
+    2. Latent Extraction: If 'save_latents' is enabled in the config, it iterates 
+       through the entire dataset, encodes every image into its latent representation, 
+       and saves these latents to disk in chunked pickle files. These saved latents 
+       are then used to train the downstream Diffusion Transformer (DiT), drastically 
+       speeding up training since the VAE encoder doesn't need to be run dynamically.
+
+    :param args: Parsed command-line arguments containing `config_path`.
+    """
     with open(args.config_path, 'r') as file:
         try:
             config = yaml.safe_load(file)
@@ -38,7 +53,7 @@ def infer(args):
                                 im_channels=dataset_config['im_channels'],
                                 label_json_path=dataset_config.get('label_json_path', None))
 
-    # This is only used for saving latents. Which as of now
+    # Used for saving latents. Which as of now
     # is not done in batches hence batch size 1
     data_loader = DataLoader(im_dataset,
                              batch_size=1,
@@ -93,6 +108,7 @@ def infer(args):
             part_count = 0
             count = 0
             for idx, batch in enumerate(tqdm(data_loader)):
+                
                 # Unpack batch - dataset now returns (image, class_label)
                 if isinstance(batch, (tuple, list)):
                     im = batch[0].float().to(device)

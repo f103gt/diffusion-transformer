@@ -12,14 +12,31 @@ from torch.utils.data.dataset import Dataset
 
 
 class LandscapesDataset(Dataset):
-    r"""
-    LandscapesHQ dataset will by default centre crop and resize the images.
-    This can be replaced by any other dataset. As long as all the images
-    are under one directory.
     """
+    A PyTorch Dataset for loading images (or pre-computed latents) and their class labels.
 
+    This dataset supports two primary modes of operation for training generative models:
+    1. Raw Image Mode: Loads images from disk, applies center cropping, resizes them, 
+       and normalizes the pixel values to the [-1, 1] range required by diffusion models.
+    2. Latent Mode: Loads pre-computed latent representations (e.g., from a VAE). 
+       This drastically speeds up training for Latent Diffusion Models (LDMs) since 
+       the encoder does not need to run during every training step.
+    """
     def __init__(self, split, im_path, im_size=256, im_channels=3, im_ext='jpg',
                  use_latents=False, latent_path=None, label_json_path=None):
+        """
+        Initialize the dataset, load file paths, and build label mappings.
+
+        :param split: String. Indicates the dataset split (e.g., 'train', 'val').
+        :param im_path: String. Path to the directory containing the images.
+        :param im_size: Int. Target height and width for the images.
+        :param im_channels: Int. Target number of image channels (e.g., 3 for RGB).
+        :param im_ext: String. Primary image extension format (though glob searches multiple).
+        :param use_latents: Bool. If True, the dataset will return pre-encoded latents 
+            instead of raw images.
+        :param latent_path: String. Path to the saved latent representations.
+        :param label_json_path: String. Path to the JSON file containing the filename-to-class mapping.
+        """
         self.split = split
         self.im_size = im_size
         self.im_channels = im_channels
@@ -56,9 +73,11 @@ class LandscapesDataset(Dataset):
                 print('Latents not found')
 
     def load_images(self, im_path):
-        r"""
-        Gets all images from the path specified
-        and stacks them all up
+        """
+        Scans the target directory and collects paths for all supported image files.
+
+        :param im_path: String. Directory to scan.
+        :return: List of strings. Absolute or relative paths to the discovered images.
         """
         assert os.path.exists(im_path), "images path {} does not exist".format(im_path)
         ims = []
@@ -74,8 +93,12 @@ class LandscapesDataset(Dataset):
     
     def load_labels(self, label_json_path):
         """
-        Load class labels from JSON file.
-        Expected format: {"filename.jpg": "class_name", ...}
+        Parses the JSON file mapping filenames to their string class labels, 
+        and generates a continuous integer ID for each unique class.
+
+        Expected JSON format: {"image_001.jpg": "mountain", "image_002.png": "forest", ...}
+
+        :param label_json_path: String. Path to the label configuration file.
         """
         with open(label_json_path, 'r') as f:
             label_data = json.load(f)
@@ -95,8 +118,10 @@ class LandscapesDataset(Dataset):
     
     def get_class_label(self, image_path):
         """
-        Get the class label for an image.
-        Returns numeric class ID.
+        Retrieves the integer class ID associated with a specific image file.
+
+        :param image_path: String. Path to the image file.
+        :return: Int. The numeric class ID. Defaults to 0 if the filename is not in the map.
         """
         filename = os.path.basename(image_path)
         
@@ -108,9 +133,24 @@ class LandscapesDataset(Dataset):
             return 0
 
     def __len__(self):
+        """
+        Returns the total number of items in the dataset.
+        """
         return len(self.images)
 
     def __getitem__(self, index):
+        """
+        Retrieves a single data sample and its corresponding class label.
+
+        If `use_latents` is True, returns the pre-computed tensor directly.
+        If False, loads the image, resizes/crops it, and scales pixel values to [-1, 1].
+
+        :param index: Int. The index of the item to fetch.
+        :return: A tuple `(data, label)` where:
+            - `data` is a Float tensor. Shape is `(im_channels, im_size, im_size)` if raw, 
+              or `(latent_channels, latent_h, latent_w)` if latents.
+            - `label` is a Long tensor of shape `()` containing the integer class ID.
+        """
         image_path = self.images[index]
         class_label = self.get_class_label(image_path)
         

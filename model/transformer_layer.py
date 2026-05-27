@@ -16,6 +16,12 @@ class TransformerLayer(nn.Module):
     """
 
     def __init__(self, config):
+        """
+        Initialize the DiT Transformer block.
+
+        :param config: Dictionary containing model hyperparameters. Must include:
+            - 'hidden_size': Int. The embedding dimension of the transformer (C).
+        """
         super().__init__()
         self.hidden_size = config['hidden_size']
 
@@ -46,9 +52,7 @@ class TransformerLayer(nn.Module):
             nn.Linear(self.hidden_size, 6 * self.hidden_size, bias=True)
         )
 
-        ############################
-        # DiT Layer Initialization #
-        ############################
+        # DiT Layer Initialization
         nn.init.xavier_uniform_(self.mlp_block[0].weight)
         nn.init.constant_(self.mlp_block[0].bias, 0)
         nn.init.xavier_uniform_(self.mlp_block[-1].weight)
@@ -58,6 +62,17 @@ class TransformerLayer(nn.Module):
         nn.init.constant_(self.adaptive_norm_layer[-1].bias, 0)
 
     def forward(self, x, condition):
+        """
+        Forward pass of the DiT block.
+
+        :param x: Float tensor of shape ``(B, num_patches, hidden_size)``. The input 
+            sequence of image patches.
+        :param condition: Float tensor of shape ``(B, hidden_size)``. The pooled 
+            conditioning vector (typically the sum of the timestep embedding and 
+            class label embedding).
+        :return: Float tensor of shape ``(B, num_patches, hidden_size)`` containing 
+            the processed sequence.
+        """
         scale_shift_params = self.adaptive_norm_layer(condition).chunk(6, dim=1)
         (pre_attn_shift, pre_attn_scale, post_attn_scale,
          pre_mlp_shift, pre_mlp_scale, post_mlp_scale) = scale_shift_params

@@ -6,7 +6,7 @@ import os
 from torchvision.utils import make_grid
 from PIL import Image
 from tqdm import tqdm
-from model.vae import VAE
+from model.vae.vae import VAE
 from model.transformer import DIT
 from scheduler.linear_scheduler import LinearNoiseScheduler
 
@@ -18,9 +18,27 @@ if torch.backends.mps.is_available():
 
 def sample(model, scheduler, train_config, dit_model_config,
            autoencoder_model_config, diffusion_config, dataset_config, vae, class_to_id=None):
-    r"""
-    Sample stepwise by going backward one timestep at a time.
-    We save the x0 predictions
+    """
+    Executes the reverse diffusion process to generate novel images from pure noise.
+
+    This function performs the core ancestral sampling loop. It starts by sampling pure 
+    Gaussian noise in the latent space and iteratively denoises it using the trained 
+    Diffusion Transformer (DiT). It supports conditional generation (targeting specific 
+    classes) or unconditional/random generation. 
+
+    To save computational overhead, intermediate steps are visualized directly in 
+    latent space (taking the first 3 channels), and the full VAE decoder is only 
+    triggered on the final timestep to produce the actual high-resolution image.
+
+    :param model: The trained DIT model.
+    :param scheduler: The noise scheduler handling variance schedules (e.g., LinearNoiseScheduler).
+    :param train_config: Dictionary of training and sampling hyperparameters.
+    :param dit_model_config: Dictionary of DiT architecture parameters.
+    :param autoencoder_model_config: Dictionary of VAE architecture parameters.
+    :param diffusion_config: Dictionary of diffusion process parameters (e.g., num_timesteps).
+    :param dataset_config: Dictionary containing dataset properties.
+    :param vae: The trained VAE model used to decode the final latent representations.
+    :param class_to_id: Optional dictionary mapping string class names to integer IDs.
     """
     im_size = dataset_config['im_size'] // 2 ** sum(autoencoder_model_config['down_sample'])
     xt = torch.randn((train_config['num_samples'],
@@ -87,6 +105,16 @@ def sample(model, scheduler, train_config, dit_model_config,
 
 
 def infer(args):
+    """
+    Initializes models, loads checkpoints, and triggers the sampling generation.
+
+    This function reads the main configuration file, sets up the Diffusion Transformer, 
+    the Variational Autoencoder, and the linear noise scheduler. It verifies that 
+    pre-trained checkpoints exist, pushes models to the target device, and manages 
+    the directory setup for the output samples before initiating the `sample` loop.
+
+    :param args: Parsed command-line arguments containing `config_path`.
+    """
     # Read the config file #
     with open(args.config_path, 'r') as file:
         try:

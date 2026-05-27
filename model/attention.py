@@ -10,6 +10,33 @@ class Attention(nn.Module):
     from it.
     """
     def __init__(self, config):
+        """
+        Initialize the Attention module.
+        
+        This module implements the scaled dot-product attention mechanism used in 
+        Transformer models. It projects the input into Query (Q), Key (K), and Value (V)
+        representations, computes attention weights, and projects the output back to 
+        the original hidden dimension.
+        
+        Args:
+            config (dict): Configuration dictionary containing:
+                - 'num_heads' (int): Number of attention heads
+                - 'hidden_size' (int): Dimension of input and output embeddings
+                - 'head_dim' (int): Dimension of each attention head
+        
+        Attributes:
+            n_heads (int): Number of parallel attention heads
+            hidden_size (int): Original embedding dimension
+            head_dim (int): Dimension per head (usually hidden_size // num_heads)
+            att_dim (int): Total attention dimension = num_heads * head_dim
+            qkv_proj (nn.Linear): Linear layer projecting from hidden_size to 3*att_dim
+                                 Used to compute Q, K, V projections simultaneously
+            output_proj (nn.Sequential): Linear layer projecting from att_dim back to hidden_size
+        
+        Shape:
+            - Input to this module: (batch_size, num_patches, hidden_size)
+            - Output from this module: (batch_size, num_patches, hidden_size)
+        """
         super().__init__()
         self.n_heads = config['num_heads']
         self.hidden_size = config['hidden_size']
@@ -31,6 +58,74 @@ class Attention(nn.Module):
         nn.init.constant_(self.output_proj[0].bias, 0)
 
     def forward(self, x):
+        """
+        Apply scaled dot-product attention to the input.
+        
+        This method implements the multi-head scaled dot-product attention mechanism:
+        
+            Attention(Q, K, V) = softmax(Q * K^T / sqrt(d_k)) * V
+        
+        Where:
+            - Q (Query): Computed from input via linear projection
+            - K (Key): Computed from input via linear projection
+            - V (Value): Computed from input via linear projection
+            - d_k: Dimension of each head (head_dim)
+            - sqrt(d_k): Scaling factor to stabilize gradients
+        
+        The computation is parallelized across multiple attention heads, each operating
+        on a subset of the embedding dimension, which allows the model to attend to 
+        different representation subspaces simultaneously.
+        
+        Args:
+            x (torch.Tensor): Input tensor of shape (batch_size, num_patches, hidden_size)
+                            Typically represents patch embeddings from an image or sequence tokens
+        
+        Returns:
+            torch.Tensor: Output tensor of shape (batch_size, num_patches, hidden_size)
+                         Contains the weighted combination of values based on attention scores
+        
+        Process:
+        --------
+        1. PROJECT TO Q, K, V:
+           - Input x: (B, N, hidden_size)
+           - After qkv_proj: (B, N, 3*att_dim)
+           - Split into Q, K, V each of shape: (B, N, att_dim)
+           
+        2. RESHAPE FOR MULTI-HEAD ATTENTION:
+           - Q, K, V: (B, N, num_heads*head_dim)
+           - After rearrange: (B, num_heads, N, head_dim)
+           - Where B=batch_size, N=num_patches, num_heads=number of attention heads
+           
+        3. COMPUTE ATTENTION WEIGHTS (scaled dot-product):
+           - Scores = Q @ K^T: (B, num_heads, N, N)
+           - Scale by 1/sqrt(head_dim) for numerical stability
+           - Apply softmax across last dimension to get weights in [0, 1]
+           - Formula: att = softmax(Q @ K^T / sqrt(d_k))
+           
+        4. APPLY ATTENTION TO VALUES:
+           - Weighted values: att @ V: (B, num_heads, N, head_dim)
+           - Combines value information according to attention weights
+           
+        5. RESHAPE AND PROJECT OUTPUT:
+           - Concatenate heads: (B, num_heads, N, head_dim) -> (B, N, att_dim)
+           - Project to original dimension: (B, N, att_dim) -> (B, N, hidden_size)
+        
+        Shape transformations:
+        ----------------------
+        (B, N, hidden_size) 
+            ↓ [qkv_proj]
+        (B, N, 3*att_dim) 
+            ↓ [split]
+        3 × (B, N, att_dim)
+            ↓ [rearrange]
+        3 × (B, num_heads, N, head_dim)
+            ↓ [attention computation]
+        (B, num_heads, N, head_dim)
+            ↓ [rearrange back]
+        (B, N, att_dim)
+            ↓ [output_proj]
+        (B, N, hidden_size)
+        """
         #  Converting to Attention Dimension
         ######################################################
         # Batch Size x Number of Patches x Dimension

@@ -8,7 +8,7 @@ from torch.optim import AdamW
 from dataset.landscapes_dataset import LandscapesDataset
 from torch.utils.data import DataLoader
 from model.transformer import DIT
-from model.vae import VAE
+from model.vae.vae import VAE
 from scheduler.linear_scheduler import LinearNoiseScheduler
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -18,6 +18,27 @@ if torch.backends.mps.is_available():
 
 
 def train(args):
+    """
+    Core training loop for the Conditional Diffusion Transformer (DiT).
+
+    This function orchestrates the entire training pipeline for the diffusion model. 
+    It operates in the latent space of a Variational Autoencoder (VAE) to drastically 
+    reduce computational requirements compared to pixel-space diffusion.
+
+    Key mechanisms handled in this loop:
+    1. Latent Processing: 
+       - If `use_latents` is True, it loads pre-computed VAE outputs (mean and log-variance) 
+         and applies the reparameterization trick to sample the latents.
+       - If False, it dynamically passes raw images through the frozen VAE encoder.
+    2. Forward Diffusion: Randomly samples a timestep `t` for each batch item and adds 
+       the corresponding level of Gaussian noise to the clean latents.
+    3. Reverse Prediction: Feeds the noisy latents, timesteps, and class labels into 
+       the DiT, which attempts to predict the exact noise that was added.
+    4. Optimization: Calculates the Mean Squared Error (MSE) between the predicted noise 
+       and the actual noise, and updates the DiT weights using Gradient Accumulation.
+
+    :param args: Parsed command-line arguments containing the path to the YAML `config_path`.
+    """
     # Read the config file #
     with open(args.config_path, 'r') as file:
         try:
@@ -25,7 +46,6 @@ def train(args):
         except yaml.YAMLError as exc:
             print(exc)
     print(config)
-    ########################
 
     diffusion_config = config['diffusion_params']
     dataset_config = config['dataset_params']

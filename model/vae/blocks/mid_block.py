@@ -4,18 +4,46 @@ import torch.nn as nn
 class MidBlock(nn.Module):
     r"""
     Bottleneck building block placed at the deepest point between the encoder
-    and decoder paths.
+    and decoder paths of a U-Net or VAE architecture.
+
+    Why it exists:
+    At the absolute bottom of the network, spatial dimensions (Height and Width) 
+    are at their most compressed, meaning each "pixel" in the feature map contains 
+    highly semantic, global information. Because the spatial resolution is tiny 
+    here, it is computationally feasible to use Attention mechanisms. The MidBlock's 
+    job is to process this dense representation, allowing distant parts of the image 
+    to communicate with each other globally (via self-attention) and to incorporate 
+    external conditioning like text embeddings (via cross-attention) before the 
+    feature map is handed off to the decoder for upsampling.
 
     Processing order:
         1. Initial ResNet-style residual convolution.
         For each of num_layers iterations:
-            2. Self-attention.
-            3. Cross-attention conditioned on an external context tensor (optional).
-            4. ResNet-style residual convolution.
+            2. Self-attention: Global spatial mixing of features.
+            3. Cross-attention (optional): Conditioned on an external context tensor.
+            4. ResNet-style residual convolution: Local feature refinement.
     """
-
     def __init__(self, in_channels, out_channels, t_emb_dim, num_heads, num_layers,
                  norm_channels, cross_attn=None, context_dim=None):
+        r"""
+        Initializes the MidBlock components.
+
+        :param in_channels: Int. Number of channels in the incoming feature map.
+        :param out_channels: Int. Number of channels for the output and internal 
+            feature maps.
+        :param t_emb_dim: Int or None. Dimensionality of the timestep embedding. 
+            Used to condition the ResNet blocks on the current diffusion noise level.
+        :param num_heads: Int. Number of attention heads for the Multi-Head 
+            Attention layers.
+        :param num_layers: Int. Number of times to repeat the core sequence of 
+            (Self-Attn -> Cross-Attn -> ResNet).
+        :param norm_channels: Int. Number of groups to use for Group Normalization 
+            (standard for diffusion models as it is batch-size independent).
+        :param cross_attn: Bool. If True, enables Cross-Attention layers to condition 
+            the features on external context (e.g., text prompts).
+        :param context_dim: Int or None. Dimensionality of the external context tensor. 
+            Must be provided if `cross_attn` is True.
+        """
         super().__init__()
         self.num_layers = num_layers
         self.t_emb_dim = t_emb_dim
@@ -83,6 +111,25 @@ class MidBlock(nn.Module):
         )
 
     def forward(self, x, t_emb=None, context=None):
+        r"""
+        Forward pass of the MidBlock.
+
+        What it is designed for:
+        This function takes the heavily downsampled spatial features from the encoder, 
+        injects time-step conditioning (to tell the network what the current noise level is), 
+        allows spatial elements to cross-pollinate information (self-attention), injects 
+        external conditions (cross-attention), and outputs a highly refined feature map 
+        ready to be decoded.
+
+        :param x: Float tensor of shape ``(B, in_channels, H, W)``. The incoming feature map 
+            from the final layer of the downsampling (encoder) path.
+        :param t_emb: Float tensor of shape ``(B, t_emb_dim)`` or None. The time-step 
+            embedding representing the current stage of diffusion.
+        :param context: Float tensor of shape ``(B, seq_len, context_dim)`` or None. The 
+            external conditioning context (e.g., text prompt embeddings).
+        :return: Float tensor of shape ``(B, out_channels, H, W)``. The processed feature 
+            map ready for the upsampling (decoder) path.
+        """
         out = x
 
         # First residual convolution block

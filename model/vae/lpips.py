@@ -3,6 +3,8 @@ import torch
 import torch.nn as nn
 import torchvision
 from model.helpers import spatial_average
+import inspect
+import os
 
 # Taken from https://github.com/richzhang/PerceptualSimilarity/blob/master/lpips/lpips.py
 
@@ -80,8 +82,6 @@ class LPIPS(nn.Module):
         ########################
         
         # Load the weights of trained LPIPS model
-        import inspect
-        import os
         model_path = os.path.abspath(
             os.path.join(inspect.getfile(self.__init__), '..', 'weights/v%s/%s.pth' % (version, net)))
         print('Loading model from: %s' % model_path)
