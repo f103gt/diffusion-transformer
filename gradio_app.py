@@ -18,7 +18,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import model components
-from model.vae.vae import VAE
+from model.vae.pretrained_vae import HuggingFaceVAEWrapper
 from model.transformer import DIT
 from scheduler.linear_scheduler import LinearNoiseScheduler
 
@@ -87,19 +87,21 @@ def load_models(config_path="config/landscapeshq.yaml"):
     model.load_state_dict(torch.load(dit_checkpoint_path, map_location=device))
     print(f"DiT model loaded from {dit_checkpoint_path}")
     
-    # Create and load VAE
-    vae = VAE(
-        im_channels=dataset_config['im_channels'],
-        model_config=autoencoder_config
-    )
-    vae.eval()
+    # Create and load VAE (MUST use fine-tuned weights)
+    print("\nLoading Fine-tuned Stable Diffusion VAE...")
+    vae = HuggingFaceVAEWrapper(device=device)
     
     vae_checkpoint_path = os.path.join(train_config['task_name'], train_config['vae_autoencoder_ckpt_name'])
     if not os.path.exists(vae_checkpoint_path):
-        raise FileNotFoundError(f"VAE checkpoint not found at {vae_checkpoint_path}")
+        raise FileNotFoundError(
+            f"Fine-tuned VAE checkpoint not found at {vae_checkpoint_path}\n"
+            f"Please run: python -m tools.train_vae --config {args.config}\n"
+            f"Then: python -m tools.infer_vae --config {args.config}"
+        )
     
-    vae.load_state_dict(torch.load(vae_checkpoint_path, map_location=device), strict=True)
-    print(f"VAE loaded from {vae_checkpoint_path}")
+    print(f"Loading fine-tuned VAE from {vae_checkpoint_path}")
+    vae.vae.load_state_dict(torch.load(vae_checkpoint_path, map_location=device))
+    vae.vae.eval()
     
     # Load class mapping
     if 'label_json_path' in dataset_config and dataset_config['label_json_path']:
@@ -179,8 +181,9 @@ def generate_image(class_name, upscale_factor, progress=gr.Progress()):
         
         progress(0.8, desc="Decoding latent...")
         
-        # Decode the latent - EXACTLY like sample_vae_dit.py
-        ims = vae.to(device).decode(xt)
+        # Decode the latent using pre-trained VAE
+        # xt already contains scaled latents from diffusion process
+        ims = vae.decode(xt)
         ims = torch.clamp(ims, -1., 1.).detach().cpu()
         ims = (ims + 1) / 2
         

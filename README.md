@@ -3,7 +3,7 @@ Diffusion Transformers (DiT-B)
 
 This repository implements **DiT-B (Diffusion Transformer Base)** for class-conditional image generation on LandscapesHQ. It provides:
 
-* **VAE Training & Inference**: Training and inference of VAE on LandscapesHQ (128×128 → 32×32×4 latents)
+* **VAE**: Pre-trained Stable Diffusion VAE (`stabilityai/sd-vae-ft-mse`) via HuggingFace diffusers, with optional fine-tuning on LandscapesHQ (128×128 → 32×32×4 latents)
 * **Conditional DiT Training**: Class-conditional DiT-B with **Classifier-Free Guidance (CFG)** for 7 mountain categories
 * **Interactive Testing**: Gradio web interface for real-time image generation with adjustable upscaling
 * **Latent Caching**: Fast VAE latent caching to accelerate DiT training
@@ -37,7 +37,7 @@ This repository implements **DiT-B (Diffusion Transformer Base)** for class-cond
 
 3. Download LPIPS weights (required for VAE training)
    - Open this link in your browser (do not use curl/wget): https://github.com/richzhang/PerceptualSimilarity/blob/master/lpips/weights/v0.1/vgg.pth
-   - Download the raw file and place it at: `model/weights/v0.1/vgg.pth`
+   - Download the raw file and place it at: `model/vae/weights/v0.1/vgg.pth`
 
 ## Data Preparation
 
@@ -103,9 +103,22 @@ Configuration files control all training and model parameters. Primary config: `
 - `dit_lr`: Learning rate (default: 1e-5)
 ## Training Workflow
 
-### 1. Train the VAE (Autoencoder)
+### 1. VAE Setup (Pre-trained or Fine-tuned)
 
-Pre-train the VAE on the dataset to compress 128×128 RGB images into 32×32×4 latents:
+The VAE uses the official Stable Diffusion VAE (`stabilityai/sd-vae-ft-mse`) loaded via HuggingFace diffusers.
+Weights (~330 MB) are downloaded automatically on first run and cached at `~/.cache/huggingface/hub/`.
+
+**By default the VAE is frozen** — the pre-trained weights already compress images well enough for latent diffusion.
+Fine-tuning is optional and only recommended if you see domain-specific reconstruction artifacts.
+
+To control this, edit `config/landscapeshq.yaml`:
+```yaml
+finetune_vae: False    # set True to fine-tune VAE weights on your dataset
+finetune_epochs: 1     # number of fine-tuning epochs (1-3 is usually sufficient)
+autoencoder_epochs: 5  # epochs to run when finetune_vae is False (discriminator training only)
+```
+
+Run the training script regardless of mode (it always trains the discriminator and saves reconstruction samples):
 
 ```bash
 python -m tools.train_vae --config config/landscapeshq.yaml
@@ -192,8 +205,7 @@ All outputs are saved to the `task_name` directory (default: `landscapeshq/`)
 
 ```
 landscapeshq/
-├── vae_autoencoder_ckpt.pth              # Trained VAE checkpoint
-├── vae_discriminator_ckpt.pth            # VAE discriminator checkpoint
+├── vae_autoencoder_ckpt.pth              # Fine-tuned VAE checkpoint (only if finetune_vae: True)
 ├── dit_ckpt.pth                          # Trained DiT-B checkpoint
 ├── dit_training_state.pth                # Training state (for resuming)
 ├── vae_autoencoder_samples/              # VAE reconstruction samples during training
@@ -242,18 +254,21 @@ landscapeshq/
    - Projects back to 32 channels (4 channels × 4 patches per position)
    - Predicts noise to subtract from noisy latents
 
-### VAE Architecture
+### VAE
+
+**Pre-trained model:** `stabilityai/sd-vae-ft-mse` (HuggingFace diffusers `AutoencoderKL`)
 
 **Latent Space Compression:**
 - Input: 128×128×3 (RGB images)
 - Output: 32×32×4 (4× spatial compression, 4 latent channels)
 - Compression Ratio: 16×
+- Latents are scaled by `0.18215` (standard SD practice) before DiT training
 
-**Components:**
-- **Encoder**: Down-sampling with attention layers
-- **Decoder**: Up-sampling to reconstruct images
-- **Discriminator**: PatchGAN-style discriminator for adversarial training
-- **Perceptual Loss**: LPIPS loss using VGG features
+**Fine-tuning losses (only when `finetune_vae: True`):**
+- Reconstruction (MSE) — pixel-level fidelity
+- KL divergence — keeps the latent space well-structured
+- Perceptual (LPIPS, VGG) — preserves semantic and texture quality
+- 1–2 epochs is sufficient given the strong pretrained initialisation
 
 ## Classifier-Free Guidance (CFG)
 
