@@ -3,7 +3,7 @@ Diffusion Transformers (DiT-B)
 
 This repository implements **DiT-B (Diffusion Transformer Base)** for class-conditional image generation on LandscapesHQ. It provides:
 
-* **VAE**: Pre-trained Stable Diffusion VAE (`stabilityai/sd-vae-ft-mse`) via HuggingFace diffusers, with optional fine-tuning on LandscapesHQ (128×128 → 32×32×4 latents)
+* **VAE**: Three interchangeable modes — train from scratch (`model/vae/vae.py`), fine-tune the pre-trained SD VAE, or use it frozen — all controlled by a single `vae_mode` key in the config
 * **Conditional DiT Training**: Class-conditional DiT-B with **Classifier-Free Guidance (CFG)** for 7 mountain categories
 * **Interactive Testing**: Gradio web interface for real-time image generation with adjustable upscaling
 * **Latent Caching**: Fast VAE latent caching to accelerate DiT training
@@ -36,8 +36,8 @@ This repository implements **DiT-B (Diffusion Transformer Base)** for class-cond
    ```
 
 3. Download LPIPS weights (required for VAE training)
-   - Open this link in your browser (do not use curl/wget): https://github.com/richzhang/PerceptualSimilarity/blob/master/lpips/weights/v0.1/vgg.pth
-   - Download the raw file and place it at: `model/vae/weights/v0.1/vgg.pth`
+   - Open this link in your browser (do not use curl/wget): https://github.com/richzhang/PerceptualSimilarity/raw/master/lpips/weights/v0.1/vgg.pth
+   - Download the raw file and place it at: `model/vae/weights/vgg.pth`
 
 ## Data Preparation
 
@@ -96,6 +96,10 @@ Configuration files control all training and model parameters. Primary config: `
 - `class_dropout_prob`: 0.1 (**Classifier-Free Guidance** - drops labels 10% of the time during training)
 
 **Training Configuration:**
+- `vae_mode`: VAE experiment mode — `scratch`, `finetune`, or `pretrained` (see below)
+- `pretrained_vae_model`: HuggingFace model ID used in `finetune`/`pretrained` modes (default: `stabilityai/sd-vae-ft-mse`)
+- `autoencoder_epochs`: Training epochs for `scratch` mode
+- `finetune_epochs`: Training epochs for `finetune` mode (fewer needed — weights are pretrained)
 - `save_latents`: Enable to pre-compute VAE latents (recommended for faster training)
 - `dit_batch_size`: Batch size for DiT training
 - `dit_epochs`: Number of training epochs
@@ -103,28 +107,39 @@ Configuration files control all training and model parameters. Primary config: `
 - `dit_lr`: Learning rate (default: 1e-5)
 ## Training Workflow
 
-### 1. VAE Setup (Pre-trained or Fine-tuned)
+### 1. VAE Setup
 
-The VAE uses the official Stable Diffusion VAE (`stabilityai/sd-vae-ft-mse`) loaded via HuggingFace diffusers.
-Weights (~330 MB) are downloaded automatically on first run and cached at `~/.cache/huggingface/hub/`.
+Choose a VAE experiment mode by setting `vae_mode` in `config/landscapeshq.yaml`:
 
-**By default the VAE is frozen** — the pre-trained weights already compress images well enough for latent diffusion.
-Fine-tuning is optional and only recommended if you see domain-specific reconstruction artifacts.
+| Mode | Description | Requires checkpoint? |
+|---|---|---|
+| `pretrained` | Frozen SD VAE from HuggingFace — no training needed | No |
+| `finetune` | Start from SD VAE, fine-tune on your dataset | Yes (saved by train script) |
+| `scratch` | Train a custom VAE from zero using `model/vae/vae.py` | Yes (saved by train script) |
 
-To control this, edit `config/landscapeshq.yaml`:
 ```yaml
-finetune_vae: False    # set True to fine-tune VAE weights on your dataset
-finetune_epochs: 1     # number of fine-tuning epochs (1-3 is usually sufficient)
-autoencoder_epochs: 5  # epochs to run when finetune_vae is False (discriminator training only)
+train_params:
+  vae_mode: 'pretrained'          # scratch | finetune | pretrained
+  pretrained_vae_model: 'stabilityai/sd-vae-ft-mse'  # used by finetune/pretrained
+  finetune_epochs: 1              # epochs for finetune mode (1-3 is sufficient)
+  autoencoder_epochs: 50          # epochs for scratch mode
 ```
 
-Run the training script regardless of mode (it always trains the discriminator and saves reconstruction samples):
+**`pretrained` mode** — fastest path, good baseline before deciding to fine-tune. The SD VAE weights (~330 MB) download automatically on first use and are cached at `~/.cache/huggingface/hub/`. No training script needed; skip straight to latent caching.
+
+**`finetune` mode** — recommended if you see domain-specific reconstruction artefacts with the frozen VAE. Fine-tunes the SD VAE on your dataset for `finetune_epochs` epochs:
 
 ```bash
 python -m tools.train_vae --config config/landscapeshq.yaml
 ```
 
-**Outputs:**
+**`scratch` mode** — trains `model/vae/vae.py` from random initialisation. Requires more epochs and data than fine-tuning, but gives full control over the architecture:
+
+```bash
+python -m tools.train_vae --config config/landscapeshq.yaml
+```
+
+**Outputs (finetune / scratch):**
 - Checkpoint: `landscapeshq/vae_autoencoder_ckpt.pth`
 - Sample reconstructions: `landscapeshq/vae_autoencoder_samples/`
 
@@ -162,9 +177,30 @@ python -m tools.train_vae_dit --config config/landscapeshq.yaml
 
 ## Testing & Inference
 
-### Interactive Testing with Gradio
+### Running with Pre-trained Weights (skip training)
 
-Launch the interactive Gradio web interface for real-time image generation:
+If you have trained checkpoints (or downloaded them from the repo), you can skip all training steps and run inference immediately.
+
+1. Place checkpoint files in `landscapeshq/` (tracked by git — `.pth` files there are not gitignored):
+   - `landscapeshq/dit_ckpt.pth` — trained DiT-B model (always required)
+   - `landscapeshq/vae_autoencoder_ckpt.pth` — VAE weights (only for `scratch` or `finetune` mode)
+
+2. Set `vae_mode` in `config/landscapeshq.yaml` to match the weights you have:
+
+   | Weights available | Set `vae_mode` to |
+   |---|---|
+   | DiT only | `pretrained` (uses frozen SD VAE, no extra weights needed) |
+   | DiT + fine-tuned VAE | `finetune` |
+   | DiT + custom VAE trained from scratch | `scratch` |
+
+3. Launch directly:
+   ```bash
+   python gradio_app.py --config config/landscapeshq.yaml
+   ```
+
+### Interactive Generation with Gradio
+
+Launch the web interface for real-time image generation:
 
 ```bash
 python gradio_app.py --config config/landscapeshq.yaml --server-name 0.0.0.0 --server-port 7860
@@ -173,13 +209,8 @@ python gradio_app.py --config config/landscapeshq.yaml --server-name 0.0.0.0 --s
 **Features:**
 - **Class Selection**: Choose from 7 mountain categories (canyon, cliff, glacier, mountain, rocky coast, snowy mountain, volcano)
 - **Random Seed**: Each generation is unique (random seed for variety)
-- **Upscaling**: Real-time 1-4× upscaling using Lanczos resampling
-  - 1× = 128×128 (base latent resolution)
-  - 2× = 256×256
-  - 3× = 384×384
-  - 4× = 512×512 (maximum)
-- **Live Progress**: See real-time sampling progress bar
-- **Examples**: Pre-configured examples for quick testing
+- **Upscaling**: 1-4× upscaling
+- **Live Progress**: Real-time sampling progress bar
 
 **Access:**
 - Local: `http://localhost:7860`
@@ -205,7 +236,7 @@ All outputs are saved to the `task_name` directory (default: `landscapeshq/`)
 
 ```
 landscapeshq/
-├── vae_autoencoder_ckpt.pth              # Fine-tuned VAE checkpoint (only if finetune_vae: True)
+├── vae_autoencoder_ckpt.pth              # VAE checkpoint (scratch or finetune mode only)
 ├── dit_ckpt.pth                          # Trained DiT-B checkpoint
 ├── dit_training_state.pth                # Training state (for resuming)
 ├── vae_autoencoder_samples/              # VAE reconstruction samples during training
@@ -256,19 +287,23 @@ landscapeshq/
 
 ### VAE
 
-**Pre-trained model:** `stabilityai/sd-vae-ft-mse` (HuggingFace diffusers `AutoencoderKL`)
+Three modes are available, selected via `vae_mode` in the config.
 
-**Latent Space Compression:**
-- Input: 128×128×3 (RGB images)
-- Output: 32×32×4 (4× spatial compression, 4 latent channels)
-- Compression Ratio: 16×
-- Latents are scaled by `0.18215` (standard SD practice) before DiT training
+**`pretrained` / `finetune` — `stabilityai/sd-vae-ft-mse`** (HuggingFace diffusers `AutoencoderKL`):
+- Input: 128×128×3 → Output: 32×32×4 (16× compression)
+- Latents scaled by `0.18215` before DiT training (standard SD practice)
+- In `finetune` mode, the saved state dict is loaded on top of the pretrained weights
 
-**Fine-tuning losses (only when `finetune_vae: True`):**
+**`scratch` — `model/vae/vae.py`** (custom `VAE`):
+- Same spatial compression (128×128 → 32×32×4) via configurable encoder/decoder blocks
+- No latent scaling — DiT trains directly on raw latents
+- Architecture controlled by `autoencoder_params` in the config (channels, layers, attention)
+
+**Training losses (scratch and finetune modes):**
 - Reconstruction (MSE) — pixel-level fidelity
 - KL divergence — keeps the latent space well-structured
 - Perceptual (LPIPS, VGG) — preserves semantic and texture quality
-- 1–2 epochs is sufficient given the strong pretrained initialisation
+- For `finetune`: 1–2 epochs is sufficient given the strong pretrained initialisation
 
 ## Classifier-Free Guidance (CFG)
 

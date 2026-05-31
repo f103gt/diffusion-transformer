@@ -13,8 +13,10 @@ __pycache__
 *.csv
 *.json
 
-# Ignore checkpoints
+# Ignore checkpoints everywhere …
 *.pth
+# … except the committed model weights in the output directory
+!landscapeshq/*.pth
 
 # Ignore pickle files
 *.pkl

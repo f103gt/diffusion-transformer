@@ -83,7 +83,7 @@ class LPIPS(nn.Module):
         
         # Load the weights of trained LPIPS model
         model_path = os.path.abspath(
-            os.path.join(inspect.getfile(self.__init__), '..', 'weights/v%s/%s.pth' % (version, net)))
+            os.path.join(inspect.getfile(self.__init__), '..', 'weights/%s.pth' % (net)))
         print('Loading model from: %s' % model_path)
         self.load_state_dict(torch.load(model_path, map_location=device), strict=False)
         ########################
