@@ -39,21 +39,34 @@ class Attention(nn.Module):
         """
         super().__init__()
         self.n_heads = config['num_heads']
+        # The main dimension of the entire Transformer (e.g., 768 in DiT-B)
         self.hidden_size = config['hidden_size']
+        # The dimension each individual head will operate on (e.g., 768 // 12 = 64)
         self.head_dim = config['head_dim']
 
+        # The total dimension used for attention (usually equals hidden_size, but defined explicitly)
         self.att_dim = self.n_heads * self.head_dim
 
         # QKV projection for the input
+        # Instead of 3 separate linear layers for Query, Key, and Value, we use 1 massive layer.
+        # It takes the input (hidden_size) and projects it to 3 times the attention dimension.
+        # We will slice this into Q, K, and V during the forward pass.
         self.qkv_proj = nn.Linear(self.hidden_size, 3 * self.att_dim, bias=True)
+
+        # A linear layer to project the concatenated attention heads back to the original hidden size.
         self.output_proj = nn.Sequential(
-            nn.Linear(self.att_dim, self.hidden_size))
+            nn.Linear(self.att_dim, self.hidden_size)
+        )
 
         ############################
         # DiT Layer Initialization #
         ############################
+        # Initialize the QKV weights using Xavier Uniform to keep the variance of activations 
+        # stable across layers, preventing exploding/vanishing gradients early in training.
         nn.init.xavier_uniform_(self.qkv_proj.weight)
+        # Start with zero bias so the linear layer doesn't introduce immediate shift.
         nn.init.constant_(self.qkv_proj.bias, 0)
+        # Same Xavier initialization for the final output projection.
         nn.init.xavier_uniform_(self.output_proj[0].weight)
         nn.init.constant_(self.output_proj[0].bias, 0)
 

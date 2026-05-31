@@ -23,8 +23,13 @@ class TransformerLayer(nn.Module):
             - 'hidden_size': Int. The embedding dimension of the transformer (C).
         """
         super().__init__()
+        # The main feature dimension (e.g., 768)
         self.hidden_size = config['hidden_size']
-
+        
+        # Standard ViT expansion factor for the MLP: 4x the hidden dimension
+        # CRITICAL: elementwise_affine=False tells PyTorch NOT to learn standard weights/biases.
+        # We turn this off because our `adaptive_norm_layer` will dynamically generate 
+        # the weights (scale) and biases (shift) based on the diffusion timestep.
         ff_hidden_dim = 4 * self.hidden_size
 
         # Layer norm for attention block
